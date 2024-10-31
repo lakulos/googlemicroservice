@@ -1,0 +1,116 @@
+name: Docker Build and Push Microservices
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Services to build (comma-separated)'
+        required: false
+        type: string
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  determine-services:
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.check.outputs.should-run }}
+    steps:
+      - id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "should-run=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SERVICES="${{ inputs.services }}"
+            CURRENT_SERVICE="${{ matrix.service_name }}"
+            if [[ ",${SERVICES}," == *",${CURRENT_SERVICE},"* ]]; then
+              echo "should-run=true" >> $GITHUB_OUTPUT
+            else
+              echo "should-run=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "should-run=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-push:
+    needs: determine-services
+    if: needs.determine-services.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - service_name: "adservice"
+            service_context: "./src/adservice"
+            service_dockerfile: "./src/adservice/Dockerfile"
+          
+          - service_name: "cartservice"
+            service_context: "./src/cartservice/src"
+            service_dockerfile: "./src/cartservice/src/Dockerfile"
+
+          - service_name: "checkoutservice"
+            service_context: "./src/checkoutservice"
+            service_dockerfile: "./src/checkoutservice/Dockerfile"
+
+          - service_name: "currencyservice"
+            service_context: "./src/currencyservice"
+            service_dockerfile: "./src/currencyservice/Dockerfile"
+
+          - service_name: "emailservice"
+            service_context: "./src/emailservice"
+            service_dockerfile: "./src/emailservice/Dockerfile"
+
+          - service_name: "frontend"
+            service_context: "./src/frontend"
+            service_dockerfile: "./src/frontend/Dockerfile"
+
+          - service_name: "loadgenerator"
+            service_context: "./src/loadgenerator"
+            service_dockerfile: "./src/loadgenerator/Dockerfile"
+
+          - service_name: "paymentservice"
+            service_context: "./src/paymentservice"
+            service_dockerfile: "./src/paymentservice/Dockerfile"
+
+          - service_name: "productcatalogservice"
+            service_context: "./src/productcatalogservice"
+            service_dockerfile: "./src/productcatalogservice/Dockerfile"
+
+          - service_name: "recommendationservice"
+            service_context: "./src/recommendationservice"
+            service_dockerfile: "./src/recommendationservice/Dockerfile"
+
+          - service_name: "shippingservice"
+            service_context: "./src/shippingservice"
+            service_dockerfile: "./src/shippingservice/Dockerfile"
+
+          - service_name: "shoppingassistantservice"
+            service_context: "./src/shoppingassistantservice"
+            service_dockerfile: "./src/shoppingassistantservice/Dockerfile"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ${{ matrix.service_context }}
+        file: ${{ matrix.service_dockerfile }}
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: |
+          ${{ env.DOCKERHUB_USERNAME }}/${{ matrix.service_name }}:latest
+          ${{ env.DOCKERHUB_USERNAME }}/${{ matrix.service_name }}:${{ github.sha }}
